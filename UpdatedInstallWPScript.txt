@@ -1,0 +1,93 @@
+#!/bin/bash
+# install-wordpress-centos7.sh
+#
+# Description: This script will download, configure and install WordPress for CentOS/RHEL 7.x Linux.
+#
+
+# Update system with latest package versions
+# yum update -y
+
+cd /opt
+
+#Disable SELinux
+# setenforce 0
+# sed -i 's/enforcing/disabled/g' /etc/selinux/config
+
+# Open firewall ports
+# firewall-cmd --permanent --zone=public --add-service=http 
+# firewall-cmd --permanent --zone=public --add-service=https
+# firewall-cmd --reload
+ 
+# Install the database & wget
+yum -y install mariadb-server httpd php php-mysql wget
+systemctl enable mariadb.service
+systemctl start mariadb.service
+
+#Install WP-CLI
+wget -q https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar -O /usr/bin/wp
+chown ec2-user /usr/bin/wp
+chmod 755 /usr/bin/wp
+ 
+# Add to the database
+echo 'CREATE DATABASE wordpress;' | mysql
+echo "GRANT ALL PRIVILEGES ON wordpress.* TO 'wordpress'@'localhost' IDENTIFIED BY 'password';" | mysql
+echo "FLUSH PRIVILEGES;" | mysql
+ 
+# Download and install WordPress
+curl -O https://wordpress.org/latest.tar.gz
+tar -C /var/www/html/ --strip-components=1 -zxvf latest.tar.gz && rm -f latest.tar.gz
+cd /var/www/html
+mkdir wp-content/{uploads,cache}
+chown -R apache:apache /var/www/html
+chmod -R 755 /var/www/html
+ 
+# Configure WordPress
+cp -p wp-config-sample.php wp-config.php
+sed -i 's/database_name_here/wordpress/g' wp-config.php
+sed -i 's/username_here/wordpress/g' wp-config.php
+sed -i 's/password_here/password/g' wp-config.php
+
+# Modify the .htaccess
+echo "# BEGIN WordPress
+<IfModule mod_rewrite.c> 
+   RewriteEngine On 
+   RewriteBase / 
+   RewriteRule ^index\.php$ - [L] 
+   RewriteCond %{REQUEST_FILENAME} !-f 
+   RewriteCond %{REQUEST_FILENAME} !-d 
+   RewriteRule . /index.php [L] 
+</IfModule> 
+# END WordPress" >> .htaccess
+chmod 666 /var/www/html/.htaccess
+ 
+# Configure and start Apache
+sed -i "/^<Directory \"\/var\/www\/html\">/,/^<\/Directory>/{s/AllowOverride None/AllowOverride All/g}" /etc/httpd/conf/httpd.conf
+systemctl enable httpd.service
+systemctl start httpd.service
+
+#define array of plugin slugs to install
+WPPLUGINS=( server-monitor )
+
+#specify path to WordPress installation
+WPPATH=/var/www/html
+
+#specify baseurl to WordPress Site
+BASEURL=<siteurlhere>
+
+#specify site title
+TITLE=AiginiTestWPSite
+
+#specify user email
+YOUREMAIL=aigini82@gmail.com
+
+#Install WordPress
+wp core install --path=$WPPATH --url=$BASEURL --title=$TITLE --admin_user=test --admin_password=test --admin_email=$YOUREMAIL --allow-root
+
+wp plugin install ${WPPLUGINS[@]} --activate --path=$WPPATH --allow-root
+
+#Fix permissions in case you ran as root
+#chown -R apache:apache $WPPATH
+find $WPPATH -type f -exec chmod 644 {} +
+find $WPPATH -type d -exec chmod 755 {} +
+
+
